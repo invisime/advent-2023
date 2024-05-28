@@ -1,6 +1,43 @@
 #!/usr/bin/ruby
+class Range
+	# enable sorting of ranges in an array
+  def <=>(other)
+    [min, max] <=> [other.min, other.max]
+  end
 
-require 'pry'
+	EMPTY_RANGE = (-Float::INFINITY...-Float::INFINITY)
+  def empty?
+  	self == EMPTY_RANGE
+  end
+
+	# true if self is left of and overlaps other
+	def leftOverlap?(other)
+		cover?(other.min) && other.cover?(max)
+	end
+
+	# true if self is right of and overlaps other
+	def rightOverlap?(other)
+		other.leftOverlap?(self)
+	end
+
+  def &(other)
+		a, b = self, other
+		return a if b.cover? a
+		return b if a.cover? b
+		return (b.min..a.max) if a.leftOverlap? b
+		return (a.min..b.max) if a.rightOverlap? b
+		return EMPTY_RANGE if b.max < a.min || a.max < b.min
+  end
+
+  def -(other)
+		a, b = self, other
+		return [] if b.cover? a
+		return [self] if b.max < a.min || a.max < b.min
+		return [(a.min..b.min-1)] if a.leftOverlap? b
+		return [(b.max+1..a.max)] if a.rightOverlap? b
+		return [(a.min..b.min-1),(b.max+1..a.max)] if a.cover? b
+  end
+end
 
 class MapRange
 	def initialize
@@ -9,72 +46,58 @@ class MapRange
 
 	def addConfig config
 		valueStart, keyStart, length = config.strip.split(/\s+/).map(&:to_i)
-		@rangesToOffsets[(keyStart...keyStart+length)] = valueStart - keyStart
+		@rangesToOffsets[(keyStart..keyStart+length-1)] = valueStart - keyStart
 	end
 
-	def mappedValueFor value
-		foundRange = findRangeFor value
-		!foundRange ? value : value + @rangesToOffsets[foundRange]
-	end
-
-	def findRangeFor value
-		@rangesToOffsets.keys.each do |range|
-			return range if range.cover? value
-		end
-		return nil
-	end
-
-	class << self
-		MAP_NAMES = %w(seed-to-soil soil-to-fertilizer fertilizer-to-water
-			water-to-light light-to-temperature temperature-to-humidity
-			humidity-to-location)
-
-		def configureAllMaps allLines
-			@@allMaps, mapIndex, lastMap = {}, 0 , nil
-			allLines[2..-1].each do |line|
-				if line.start_with? MAP_NAMES[mapIndex]
-					lastMap = @@allMaps[MAP_NAMES[mapIndex]] = MapRange.new
-				elsif line.empty?
-					mapIndex += 1
-				else
-					lastMap.addConfig line
-				end
+	def rangesReachableFrom initialRanges
+		reachableRanges = []
+		initialRanges.each do |initialRange|
+			reachedRanges = [initialRange]
+			@rangesToOffsets.each do |map, offset|
+				intersection = initialRange & map
+				next if intersection.empty?
+				reachedRanges.map!{|r| r - intersection}.flatten!
+				reachedRanges.push(intersection.min+offset..intersection.max+offset)
 			end
-			return @@allMaps
+			reachableRanges = (reachableRanges + reachedRanges).sort
 		end
+		reachableRanges
+	end
 
-		def findSeedLocations seeds
-			locations = []
-			seeds.each do |seed|
-				number = seed
-				MAP_NAMES.each do |mapName|
-					number = @@allMaps[mapName].mappedValueFor number
-				end
-				locations.push number
+	def self.configureMapsFromInput allLines
+		allMaps = []
+		allLines[1..-1].each do |line|
+			next if line.empty?
+			if line.end_with? ':'
+				allMaps.push MapRange.new
+			else
+				allMaps[-1].addConfig line
 			end
-			locations
 		end
+		allMaps
 	end
 end
 
 # lines = IO.readlines('sample05.txt').map(&:strip)
 lines = IO.readlines('input05.txt').map(&:strip)
 
-MapRange.configureAllMaps lines
-
 seeds = lines[0].split(' ')[1..-1].map(&:to_i)
-locations = MapRange.findSeedLocations seeds
-puts locations.min
+maps = MapRange.configureMapsFromInput lines
 
-locations = []
-seedRanges = []
+seedRanges1 = seeds.map{|s|(s..s)}.sort
+reachableRanges = seedRanges1
+maps.each do |map|
+	reachableRanges = map.rangesReachableFrom reachableRanges
+end
+puts reachableRanges[0].min
+
+seedRanges2 = []
 (seeds.count/2).times do |i|
 	start, length = seeds[i*2], seeds[i*2 + 1]
-	seedRanges.push(start...start+length)
-	locations += MapRange.findSeedLocations seedRanges[-1]
+	seedRanges2.push(start..start+length-1)
 end
-puts locations.min
-
-binding.pry
-
-#elapsed time: 1h45m
+reachableRanges = seedRanges2.sort
+maps.each do |map|
+	reachableRanges = map.rangesReachableFrom reachableRanges
+end
+puts reachableRanges[0].min
