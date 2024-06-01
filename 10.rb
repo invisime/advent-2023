@@ -1,7 +1,5 @@
 #!/usr/bin/ruby
 
-require 'pry'
-
 class String
 
 	NORTH_CONNECTORS = %w(| L J)
@@ -155,7 +153,3 @@ lines = IO.readlines('input10.txt').map(&:strip)
 pipeloop = PipeLoop.new lines
 puts pipeloop.stepsToFarthestPoint
 puts pipeloop.enclosedTileCount
-
-binding.pry pipeloop
-
-# 424 too low

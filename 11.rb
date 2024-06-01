@@ -1,7 +1,5 @@
 #!/usr/bin/ruby
 
-require 'pry'
-
 class GalaxyMap
 	def initialize lines
 		@height = lines.count
@@ -50,5 +48,3 @@ puts galaxy_map.sum_of_distances
 
 galaxy_map.chart_galaxies 1000000
 puts galaxy_map.sum_of_distances
-
-binding.pry galaxy_map
