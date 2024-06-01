@@ -1,81 +1,151 @@
 #!/usr/bin/ruby
 
-class Coordinates
-	attr_reader :row, :column, :origin
+require 'pry'
 
-	def initialize row, column, origin=nil
-		@row, @column, @origin = row, column, origin
+class String
+
+	NORTH_CONNECTORS = %w(| L J)
+	SOUTH_CONNECTORS = %w(| 7 F)
+	EAST_CONNECTORS  = %w(- L F)
+	WEST_CONNECTORS  = %w(- 7 J)
+
+	def northy?
+		NORTH_CONNECTORS.include? self
 	end
-
-	def north
-		Coordinates.new @row-1, @column, :south
+	def southy?
+		SOUTH_CONNECTORS.include? self
 	end
-
-	def south
-		Coordinates.new @row+1, @column, :north
+	def easty?
+		EAST_CONNECTORS.include? self
 	end
-
-	def east
-		Coordinates.new @row, @column+1, :west
-	end
-
-	def west
-		Coordinates.new @row, @column-1, :east
-	end
-
-	def follow pipe
-		return north if @origin != :north && PipeLoop::NORTH_CONNECTORS.include?(pipe)
-		return south if @origin != :south && PipeLoop::SOUTH_CONNECTORS.include?(pipe)
-		return east if @origin != :east && PipeLoop::EAST_CONNECTORS.include?(pipe)
-		return west if @origin != :west && PipeLoop::WEST_CONNECTORS.include?(pipe)
-		raise ArgumentError("Invalid pipe loop.")
-	end
-
-	def at_same_location? other
-		@row == other.row && @column == other.column
+	def westy?
+		WEST_CONNECTORS.include? self
 	end
 end
 
 class PipeLoop
-
-	NORTH_CONNECTORS = %w(| L J)
-	SOUTH_CONNECTORS = %w(| 7 F)
-	EAST_CONNECTORS = %w(- L F)
-	WEST_CONNECTORS = %w(- 7 J)
 
 	def initialize input
 		@sketch = []
 		@start = nil
 		input.each do |line|
 			startingColumn = line.index 'S'
-			@start = Coordinates.new(@sketch.count, startingColumn) unless startingColumn.nil?
+			@start = [@sketch.count, startingColumn] unless startingColumn.nil?
 			@sketch.push line.chars
 		end
+		@height = @sketch.count
+		@width = @sketch[0].count
+		walk_pipes
+		@inside = expand_area @inside
+		@outside = expand_area @outside
 	end
 
-	def symbol_at coords
-		return '.' if coords.row < 0 || coords.column < 0 ||
-			coords.row >= @sketch.count || coords.column >= @sketch[coords.row].count
-		@sketch[coords.row][coords.column]
+	def in_bounds? row, column
+		row >= 0 && column >= 0 && row < @height && column < @width
+	end
+
+	def symbol_at row, column
+		return '.' unless in_bounds? row, column
+		@sketch[row][column]
 	end
 
 	def stepsToFarthestPoint
-		cursors = []
-		cursors.push @start.north if SOUTH_CONNECTORS.include? symbol_at(@start.north)
-		cursors.push @start.south if NORTH_CONNECTORS.include? symbol_at(@start.south)
-		cursors.push @start.east if WEST_CONNECTORS.include? symbol_at(@start.east)
-		cursors.push @start.west if EAST_CONNECTORS.include? symbol_at(@start.west)
-		raise ArgumentError.new("Invalid starting position") unless cursors.count == 2
-		cursorA, cursorB = cursors
-		steps = 1
-		while true
-			cursorA = cursorA.follow(symbol_at cursorA)
-			steps += 1
-			break if cursorA.at_same_location? cursorB
-			cursorB = cursorB.follow(symbol_at cursorB)
-			break if cursorA.at_same_location? cursorB
+		@pipes.count / 2
+	end
+
+	def enclosedTileCount
+		@inside.count
+	end
+
+	def pretty_print
+		lines = []
+		(0...@height).each do |row|
+			line = ""
+			(0...@width).each do |column|
+				if @pipes.include? [row, column]
+					line += symbol_at row, column
+				elsif @outside.include? [row, column]
+					line += 'O'
+				elsif @inside.include? [row, column]
+					line += 'I'
+				else
+					line += '!'
+				end
+			end
+			lines.push line
 		end
-		steps
+		lines.join "\n"
+	end
+
+	private
+	def walk_pipes
+		@pipes, rights, lefts, cursors = [@start], [], [], []
+		north, south, east, west = [@start.first-1, @start.last], [@start.first+1,
+			@start.last], [@start.first, @start.last+1], [@start.first, @start.last-1]
+		cursors.push [:south, north] if symbol_at(*north).southy?
+		cursors.push [:north, south] if symbol_at(*south).northy?
+		cursors.push [:west, east] if symbol_at(*east).westy?
+		cursors.push [:east, west] if symbol_at(*west).easty?
+		raise ArgumentError.new("Invalid starting position") unless cursors.count == 2
+		origin = cursors.first.first
+		cursor = cursors.first.last
+		until cursor == @start
+			@pipes.push cursor.clone
+			pipe = symbol_at(*cursor)
+			if origin != :north && pipe.northy?
+				rights.push [cursor.first, cursor.last+1]
+				lefts.push [cursor.first, cursor.last-1]
+				cursor[0] -= 1
+				origin = :south
+				rights.push [cursor.first, cursor.last+1]
+				lefts.push [cursor.first, cursor.last-1]
+			elsif origin != :south && pipe.southy?
+				rights.push [cursor.first, cursor.last-1]
+				lefts.push [cursor.first, cursor.last+1]
+				cursor[0] += 1
+				origin = :north
+				rights.push [cursor.first, cursor.last-1]
+				lefts.push [cursor.first, cursor.last+1]
+			elsif origin != :east && pipe.easty?
+				rights.push [cursor.first+1, cursor.last]
+				lefts.push [cursor.first-1, cursor.last]
+				cursor[1] += 1
+				origin = :west
+				rights.push [cursor.first+1, cursor.last]
+				lefts.push [cursor.first-1, cursor.last]
+			elsif origin != :west && pipe.westy?
+				rights.push [cursor.first-1, cursor.last]
+				lefts.push [cursor.first+1, cursor.last]
+				cursor[1] -= 1
+				origin = :east
+				rights.push [cursor.first-1, cursor.last]
+				lefts.push [cursor.first+1, cursor.last]
+			end
+		end
+		rights = rights.uniq - @pipes
+		lefts = lefts.uniq - @pipes
+		if rights.flatten.any?(&:zero?)
+			@inside, @outside = lefts, rights
+		elsif lefts.flatten.any?(&:zero?)
+			@inside, @outside = rights, lefts
+		else
+			raise ArgumentError.new "Edge of map not found."
+		end
+		@inside.filter!{|coords| in_bounds? *coords }
+		@outside.filter!{|coords| in_bounds? *coords }
+	end
+
+	def expand_area tiles
+		i = 0
+		while i < tiles.count
+			tile = tiles[i]
+			neighbors = [[tile.first-1, tile.last],[tile.first+1, tile.last],
+				[tile.first, tile.last+1],[tile.first, tile.last-1]]
+				.filter{|c| in_bounds?(*c) }
+			tiles += (neighbors - tiles - @pipes)
+			i += 1
+		end
+		tiles
 	end
 end
 
@@ -84,3 +154,8 @@ lines = IO.readlines('input10.txt').map(&:strip)
 
 pipeloop = PipeLoop.new lines
 puts pipeloop.stepsToFarthestPoint
+puts pipeloop.enclosedTileCount
+
+binding.pry pipeloop
+
+# 424 too low
